@@ -17,7 +17,6 @@ BITGET_PASSPHRASE = os.environ.get("BITGET_PASSPHRASE")
 
 leverage = 10
 amount_usdt = 100
-demo_mode = True
 current_position = None
 
 def send_telegram(message, reply_markup=None):
@@ -29,12 +28,12 @@ def send_telegram(message, reply_markup=None):
 
 def send_control_panel():
     keyboard = {"inline_keyboard": [
-        [{"text": f"💰 Einsatz: {amount_usdt} USDT", "callback_data": "set_amount"},
-         {"text": f"⚡ Hebel: {leverage}x", "callback_data": "set_leverage"}],
-        [{"text": "📊 Status", "callback_data": "status"},
-         {"text": "🛑 Stop ATA2", "callback_data": "stop"}]
+        [{"text": f"Einsatz: {amount_usdt} USDT", "callback_data": "set_amount"},
+         {"text": f"Hebel: {leverage}x", "callback_data": "set_leverage"}],
+        [{"text": "Status", "callback_data": "status"},
+         {"text": "Stop ATA2", "callback_data": "stop"}]
     ]}
-    send_telegram("🤖 *ATA2 Kontrollpanel*\n\nWähle eine Option:", reply_markup=keyboard)
+    send_telegram("ATA2 Kontrollpanel\n\nWahle eine Option:", reply_markup=keyboard)
 
 def sign_request(timestamp, method, path, body=""):
     message = str(timestamp) + method + path + body
@@ -107,37 +106,20 @@ def webhook():
     data = request.json
     signal = data.get("signal", "").upper()
     price = data.get("price", "N/A")
-
     if signal == "BUY":
         if current_position == "short":
             close_order("buy")
-            send_telegram(f"🔄 *Short geschlossen!*\n💰 Preis: ${price}")
-        open_order("buy")
+            send_telegram("Short geschlossen! Preis: " + str(price))
+        result = open_order("buy")
         current_position = "long"
-        send_telegram(
-            f"🟢 *ATA2 – LONG geöffnet!*\n\n"
-            f"📊 SBTCSUSDT\n"
-            f"💰 Einsatz: {amount_usdt} USDT\n"
-            f"⚡ Hebel: {leverage}x\n"
-            f"💵 Preis: ${price}\n"
-            f"🎮 Demo Modus"
-        )
-
+        send_telegram("LONG geoffnet!\nSBTCSUSDT\nEinsatz: " + str(amount_usdt) + " USDT\nHebel: " + str(leverage) + "x\nPreis: " + str(price) + "\nDemo Modus\nBitget: " + str(result))
     elif signal == "SELL":
         if current_position == "long":
             close_order("sell")
-            send_telegram(f"🔄 *Long geschlossen!*\n💰 Preis: ${price}")
-        open_order("sell")
+            send_telegram("Long geschlossen! Preis: " + str(price))
+        result = open_order("sell")
         current_position = "short"
-        send_telegram(
-            f"🔴 *ATA2 – SHORT geöffnet!*\n\n"
-            f"📊 SBTCSUSDT\n"
-            f"💰 Einsatz: {amount_usdt} USDT\n"
-            f"⚡ Hebel: {leverage}x\n"
-            f"💵 Preis: ${price}\n"
-            f"🎮 Demo Modus"
-        )
-
+        send_telegram("SHORT geoffnet!\nSBTCSUSDT\nEinsatz: " + str(amount_usdt) + " USDT\nHebel: " + str(leverage) + "x\nPreis: " + str(price) + "\nDemo Modus\nBitget: " + str(result))
     return "OK", 200
 
 @app.route('/telegram', methods=['POST'])
@@ -146,22 +128,14 @@ def telegram_update():
     data = request.json
     callback = data.get("callback_query", {})
     callback_data = callback.get("data", "")
-
     if callback_data == "status":
-        send_telegram(
-            f"📊 *ATA2 Status*\n\n"
-            f"Position: {current_position or 'Keine'}\n"
-            f"Einsatz: {amount_usdt} USDT\n"
-            f"Hebel: {leverage}x\n"
-            f"Modus: Demo"
-        )
+        send_telegram("ATA2 Status\nPosition: " + str(current_position) + "\nEinsatz: " + str(amount_usdt) + " USDT\nHebel: " + str(leverage) + "x\nModus: Demo")
     elif callback_data == "set_amount":
-        send_telegram("💰 Schreibe den neuen Einsatz:\nz.B: *100*")
+        send_telegram("Schreibe den neuen Einsatz z.B: 100")
     elif callback_data == "set_leverage":
-        send_telegram("⚡ Schreibe den neuen Hebel:\nz.B: *10*")
+        send_telegram("Schreibe den neuen Hebel z.B: 10")
     elif callback_data == "stop":
-        send_telegram("🛑 *ATA2 gestoppt!*")
-
+        send_telegram("ATA2 gestoppt!")
     return "OK", 200
 
 @app.route('/panel')
@@ -172,24 +146,14 @@ def panel():
 @app.route('/test-buy')
 def test_buy():
     global current_position
-    price = "65000"
     result = open_order("buy")
-        send_telegram(f"Debug: {str(result)}")
-
     current_position = "long"
-    send_telegram(
-        f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
-        f"📊 SBTCSUSDT\n"
-        f"💰 Einsatz: {amount_usdt} USDT\n"
-        f"⚡ Hebel: {leverage}x\n"
-        f"💵 Preis: ${price}\n"
-        f"🎮 Demo Modus"
-    )
-    return "BUY Test gesendet!", 200
+    send_telegram("TEST LONG geoffnet!\nBitget Antwort: " + str(result))
+    return "Test gesendet!", 200
 
 @app.route('/')
 def home():
-    return "ATA2 läuft! ✅"
+    return "ATA2 laeuft!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
