@@ -173,7 +173,9 @@ def panel():
 def test_buy():
     global current_position
     price = "65000"
-    open_order("buy")
+    result = open_order("buy")
+        send_telegram(f"Debug: {str(result)}")
+
     current_position = "long"
     send_telegram(
         f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
