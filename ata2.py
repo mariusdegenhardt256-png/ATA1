@@ -174,5 +174,25 @@ def panel():
 def home():
     return "ATA2 läuft! ✅"
 
+@app.route('/test-buy')
+def test_buy():
+    with app.test_request_context():
+        data = {"signal": "BUY", "price": "65000"}
+        global current_position
+        price = "65000"
+        if current_position == "short":
+            send_telegram(f"🔄 *Short geschlossen!*\n💰 Preis: ${price}")
+        result = open_order("buy")
+        current_position = "long"
+        send_telegram(
+            f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
+            f"📊 SBTCSUSDT\n"
+            f"💰 Einsatz: {amount_usdt} USDT\n"
+            f"⚡ Hebel: {leverage}x\n"
+            f"💵 Preis: ${price}\n"
+            f"🎮 Demo Modus"
+        )
+    return "BUY Test gesendet!", 200
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
