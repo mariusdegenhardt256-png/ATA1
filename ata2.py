@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import time
 import json
+import base64
 
 app = Flask(__name__)
 
@@ -37,14 +38,14 @@ def send_control_panel():
 
 def sign_request(timestamp, method, path, body=""):
     message = str(timestamp) + method + path + body
-    signature = hmac.new(BITGET_SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+    sig_bytes = hmac.new(BITGET_SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
+    signature = base64.b64encode(sig_bytes).decode()
     return signature
 
 def bitget_request(method, path, body=None):
     timestamp = str(int(time.time() * 1000))
     body_str = json.dumps(body) if body else ""
     signature = sign_request(timestamp, method, path, body_str)
-    
     base_url = "https://api.bitget.com"
     headers = {
         "ACCESS-KEY": BITGET_API_KEY,
@@ -54,13 +55,11 @@ def bitget_request(method, path, body=None):
         "Content-Type": "application/json",
         "paptrading": "1"
     }
-    
     url = base_url + path
     if method == "GET":
         response = requests.get(url, headers=headers)
     else:
         response = requests.post(url, headers=headers, data=body_str)
-    
     return response.json()
 
 def set_leverage_bitget():
@@ -111,9 +110,9 @@ def webhook():
 
     if signal == "BUY":
         if current_position == "short":
-            result = close_order("buy")
+            close_order("buy")
             send_telegram(f"🔄 *Short geschlossen!*\n💰 Preis: ${price}")
-        result = open_order("buy")
+        open_order("buy")
         current_position = "long"
         send_telegram(
             f"🟢 *ATA2 – LONG geöffnet!*\n\n"
@@ -126,9 +125,9 @@ def webhook():
 
     elif signal == "SELL":
         if current_position == "long":
-            result = close_order("sell")
+            close_order("sell")
             send_telegram(f"🔄 *Long geschlossen!*\n💰 Preis: ${price}")
-        result = open_order("sell")
+        open_order("sell")
         current_position = "short"
         send_telegram(
             f"🔴 *ATA2 – SHORT geöffnet!*\n\n"
@@ -170,29 +169,25 @@ def panel():
     send_control_panel()
     return "Panel gesendet!", 200
 
+@app.route('/test-buy')
+def test_buy():
+    global current_position
+    price = "65000"
+    open_order("buy")
+    current_position = "long"
+    send_telegram(
+        f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
+        f"📊 SBTCSUSDT\n"
+        f"💰 Einsatz: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"💵 Preis: ${price}\n"
+        f"🎮 Demo Modus"
+    )
+    return "BUY Test gesendet!", 200
+
 @app.route('/')
 def home():
     return "ATA2 läuft! ✅"
-
-@app.route('/test-buy')
-def test_buy():
-    with app.test_request_context():
-        data = {"signal": "BUY", "price": "65000"}
-        global current_position
-        price = "65000"
-        if current_position == "short":
-            send_telegram(f"🔄 *Short geschlossen!*\n💰 Preis: ${price}")
-        result = open_order("buy")
-        current_position = "long"
-        send_telegram(
-            f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
-            f"📊 SBTCSUSDT\n"
-            f"💰 Einsatz: {amount_usdt} USDT\n"
-            f"⚡ Hebel: {leverage}x\n"
-            f"💵 Preis: ${price}\n"
-            f"🎮 Demo Modus"
-        )
-    return "BUY Test gesendet!", 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
