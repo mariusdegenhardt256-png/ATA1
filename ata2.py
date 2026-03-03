@@ -35,10 +35,17 @@ def sign_request(timestamp, method, path, body=""):
     signature = base64.b64encode(sig_bytes).decode()
     return signature
 
-def bitget_request(method, path, body=None):
+def bitget_request(method, path, params=None, body=None):
     timestamp = str(int(time.time() * 1000))
     body_str = json.dumps(body) if body else ""
-    signature = sign_request(timestamp, method, path, body_str)
+    
+    if params:
+        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+        sign_path = path + "?" + query_string
+    else:
+        sign_path = path
+    
+    signature = sign_request(timestamp, method, sign_path, body_str)
     base_url = "https://api.bitget.com"
     headers = {
         "ACCESS-KEY": BITGET_API_KEY,
@@ -48,7 +55,7 @@ def bitget_request(method, path, body=None):
         "Content-Type": "application/json",
         "x-simulated-trading": "1"
     }
-    url = base_url + path
+    url = base_url + sign_path
     if method == "GET":
         response = requests.get(url, headers=headers)
     else:
@@ -57,8 +64,12 @@ def bitget_request(method, path, body=None):
 
 def get_position_from_bitget():
     try:
-        path = "/api/v2/mix/position/single-position?symbol=SBTCSUSDT&productType=SUSDT-FUTURES&marginCoin=SUSDT"
-        result = bitget_request("GET", path)
+        params = {
+            "symbol": "SBTCSUSDT",
+            "productType": "SUSDT-FUTURES",
+            "marginCoin": "SUSDT"
+        }
+        result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
         send_telegram(f"🔍 Debug API: {str(result)}")
         if result.get("code") == "00000" and result.get("data"):
             data = result["data"]
@@ -136,7 +147,7 @@ def set_leverage_bitget():
         "marginCoin": "SUSDT",
         "leverage": str(leverage)
     }
-    return bitget_request("POST", path, body)
+    return bitget_request("POST", path, body=body)
 
 def open_order(side):
     set_leverage_bitget()
@@ -151,7 +162,7 @@ def open_order(side):
         "tradeSide": "open",
         "orderType": "market"
     }
-    return bitget_request("POST", path, body)
+    return bitget_request("POST", path, body=body)
 
 def close_order(side):
     path = "/api/v2/mix/order/place-order"
@@ -165,7 +176,7 @@ def close_order(side):
         "tradeSide": "close",
         "orderType": "market"
     }
-    return bitget_request("POST", path, body)
+    return bitget_request("POST", path, body=body)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
