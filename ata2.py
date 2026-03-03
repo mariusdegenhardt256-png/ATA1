@@ -29,43 +29,6 @@ def send_telegram(message, reply_markup=None):
         data["reply_markup"] = json.dumps(reply_markup)
     requests.post(url, data=data)
 
-def calculate_pnl(close_price):
-    if entry_price is None:
-        return 0, 0
-    ep = float(entry_price)
-    cp = float(close_price)
-    if current_position == "long":
-        pnl_pct = ((cp - ep) / ep) * 100 * leverage
-        pnl_usd = (cp - ep) / ep * amount_usdt * leverage
-    else:
-        pnl_pct = ((ep - cp) / ep) * 100 * leverage
-        pnl_usd = (ep - cp) / ep * amount_usdt * leverage
-    return round(pnl_usd, 2), round(pnl_pct, 2)
-
-def send_control_panel(current_price=None):
-    pnl_text = ""
-    pos_text = current_position.upper() if current_position else "Keine"
-    pos_emoji = "🟢" if current_position == "long" else "🔴" if current_position == "short" else "⚪"
-    if current_position and current_price:
-        pnl_usd, pnl_pct = calculate_pnl(current_price)
-        pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
-        pnl_text = f"\n{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
-    keyboard = {"inline_keyboard": [
-        [{"text": f"💰 Einsatz: {amount_usdt} USDT", "callback_data": "set_amount"},
-         {"text": f"⚡ Hebel: {leverage}x", "callback_data": "set_leverage"}],
-        [{"text": "📊 Status", "callback_data": "status"},
-         {"text": "🛑 Stop ATA2", "callback_data": "stop"}]
-    ]}
-    send_telegram(
-        f"🤖 *ATA2 Kontrollpanel*\n\n"
-        f"{pos_emoji} Position: *{pos_text}*"
-        f"{pnl_text}\n\n"
-        f"💰 Einsatz: {amount_usdt} USDT\n"
-        f"⚡ Hebel: {leverage}x\n"
-        f"🎮 Modus: Demo",
-        reply_markup=keyboard
-    )
-
 def sign_request(timestamp, method, path, body=""):
     message = str(timestamp) + method + path + body
     sig_bytes = hmac.new(BITGET_SECRET_KEY.encode(), message.encode(), hashlib.sha256).digest()
@@ -91,6 +54,77 @@ def bitget_request(method, path, body=None):
     else:
         response = requests.post(url, headers=headers, data=body_str)
     return response.json()
+
+def get_position_from_bitget():
+    try:
+        path = "/api/v2/mix/position/single-position?symbol=SBTCSUSDT&productType=SUSDT-FUTURES&marginCoin=SUSDT"
+        result = bitget_request("GET", path)
+        if result.get("code") == "00000" and result.get("data"):
+            data = result["data"]
+            if isinstance(data, list) and len(data) > 0:
+                pos = data[0]
+                hold_side = pos.get("holdSide", "")
+                avg_price = pos.get("averageOpenPrice", None)
+                size = pos.get("total", "0")
+                unrealized_pnl = pos.get("unrealizedPL", "0")
+                if float(size) > 0:
+                    return hold_side, avg_price, unrealized_pnl
+        return None, None, None
+    except:
+        return None, None, None
+
+def calculate_pnl(close_price):
+    if entry_price is None:
+        return 0, 0
+    ep = float(entry_price)
+    cp = float(close_price)
+    if current_position == "long":
+        pnl_pct = ((cp - ep) / ep) * 100 * leverage
+        pnl_usd = (cp - ep) / ep * amount_usdt * leverage
+    else:
+        pnl_pct = ((ep - cp) / ep) * 100 * leverage
+        pnl_usd = (ep - cp) / ep * amount_usdt * leverage
+    return round(pnl_usd, 2), round(pnl_pct, 2)
+
+def send_control_panel():
+    global current_position, entry_price
+    hold_side, avg_price, unrealized_pnl = get_position_from_bitget()
+    if hold_side:
+        current_position = hold_side
+        entry_price = avg_price
+        pos_emoji = "🟢" if hold_side == "long" else "🔴"
+        try:
+            pnl = float(unrealized_pnl)
+            pnl_emoji = "📈" if pnl >= 0 else "📉"
+            pnl_text = f"\n{pnl_emoji} PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$"
+        except:
+            pnl_text = ""
+        pos_text = hold_side.upper()
+        entry_text = f"\n💵 Eintritt: ${avg_price}" if avg_price else ""
+    else:
+        current_position = None
+        entry_price = None
+        pos_emoji = "⚪"
+        pos_text = "Keine"
+        pnl_text = ""
+        entry_text = ""
+
+    keyboard = {"inline_keyboard": [
+        [{"text": f"💰 Einsatz: {amount_usdt} USDT", "callback_data": "set_amount"},
+         {"text": f"⚡ Hebel: {leverage}x", "callback_data": "set_leverage"}],
+        [{"text": "📊 Status", "callback_data": "status"},
+         {"text": "🛑 Stop ATA2", "callback_data": "stop"}]
+    ]}
+    send_telegram(
+        f"🤖 *ATA2 Kontrollpanel*\n\n"
+        f"{pos_emoji} Position: *{pos_text}*"
+        f"{entry_text}"
+        f"{pnl_text}\n\n"
+        f"💰 Einsatz: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"🎮 Modus: Demo",
+        reply_markup=keyboard
+    )
 
 def set_leverage_bitget():
     path = "/api/v2/mix/account/set-leverage"
