@@ -20,6 +20,7 @@ amount_btc = "0.001"
 amount_usdt = 100
 current_position = None
 entry_price = None
+waiting_for = None
 
 def send_telegram(message, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -41,15 +42,12 @@ def calculate_pnl(close_price):
         pnl_usd = (ep - cp) / ep * amount_usdt * leverage
     return round(pnl_usd, 2), round(pnl_pct, 2)
 
-def get_current_pnl(current_price):
-    return calculate_pnl(current_price)
-
 def send_control_panel(current_price=None):
     pnl_text = ""
     pos_text = current_position.upper() if current_position else "Keine"
     pos_emoji = "🟢" if current_position == "long" else "🔴" if current_position == "short" else "⚪"
     if current_position and current_price:
-        pnl_usd, pnl_pct = get_current_pnl(current_price)
+        pnl_usd, pnl_pct = calculate_pnl(current_price)
         pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
         pnl_text = f"\n{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
     keyboard = {"inline_keyboard": [
@@ -190,25 +188,58 @@ def webhook():
 
 @app.route('/telegram', methods=['POST'])
 def telegram_update():
-    global leverage, amount_usdt
+    global leverage, amount_usdt, waiting_for
     data = request.json
 
     message = data.get("message", {})
     text = message.get("text", "")
+
     if text == "/start":
         send_control_panel()
         return "OK", 200
 
+    if text and waiting_for == "amount":
+        try:
+            new_amount = int(text)
+            if 10 <= new_amount <= 10000:
+                amount_usdt = new_amount
+                waiting_for = None
+                send_telegram(f"✅ Einsatz auf *{new_amount} USDT* gesetzt!")
+                send_control_panel()
+            else:
+                send_telegram("❌ Bitte zwischen 10 und 10000 USDT eingeben!")
+        except:
+            send_telegram("❌ Bitte eine Zahl eingeben!")
+        return "OK", 200
+
+    if text and waiting_for == "leverage":
+        try:
+            new_leverage = int(text)
+            if 1 <= new_leverage <= 125:
+                leverage = new_leverage
+                waiting_for = None
+                send_telegram(f"✅ Hebel auf *{new_leverage}x* gesetzt!")
+                send_control_panel()
+            else:
+                send_telegram("❌ Bitte zwischen 1 und 125 eingeben!")
+        except:
+            send_telegram("❌ Bitte eine Zahl eingeben!")
+        return "OK", 200
+
     callback = data.get("callback_query", {})
     callback_data = callback.get("data", "")
+
     if callback_data == "status":
         send_control_panel()
     elif callback_data == "set_amount":
-        send_telegram("💰 Schreibe den neuen Einsatz:\nz.B: *100*")
+        waiting_for = "amount"
+        send_telegram("💰 Schreibe den neuen Einsatz in USDT:\nz.B: *100*")
     elif callback_data == "set_leverage":
-        send_telegram("⚡ Schreibe den neuen Hebel:\nz.B: *10*")
+        waiting_for = "leverage"
+        send_telegram("⚡ Schreibe den neuen Hebel:\nz.B: *25*")
     elif callback_data == "stop":
         send_telegram("🛑 *ATA2 gestoppt!*")
+
     return "OK", 200
 
 @app.route('/panel')
