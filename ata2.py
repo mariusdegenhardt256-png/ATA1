@@ -59,6 +59,7 @@ def get_position_from_bitget():
     try:
         path = "/api/v2/mix/position/single-position?symbol=SBTCSUSDT&productType=SUSDT-FUTURES&marginCoin=SUSDT"
         result = bitget_request("GET", path)
+        send_telegram(f"🔍 Debug API: {str(result)}")
         if result.get("code") == "00000" and result.get("data"):
             data = result["data"]
             if isinstance(data, list) and len(data) > 0:
@@ -70,7 +71,8 @@ def get_position_from_bitget():
                 if float(size) > 0:
                     return hold_side, avg_price, unrealized_pnl
         return None, None, None
-    except:
+    except Exception as e:
+        send_telegram(f"❌ Debug Fehler: {str(e)}")
         return None, None, None
 
 def calculate_pnl(close_price):
