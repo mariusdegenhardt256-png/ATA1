@@ -17,6 +17,7 @@ BITGET_PASSPHRASE = os.environ.get("BITGET_PASSPHRASE")
 
 leverage = 10
 amount_usdt = 100
+amount_btc = "0.001"
 current_position = None
 
 def send_telegram(message, reply_markup=None):
@@ -79,7 +80,7 @@ def open_order(side):
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
-        "size": str(amount_usdt),
+        "size": amount_btc,
         "side": side,
         "tradeSide": "open",
         "orderType": "market"
@@ -93,7 +94,7 @@ def close_order(side):
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
-        "size": str(amount_usdt),
+        "size": amount_btc,
         "side": side,
         "tradeSide": "close",
         "orderType": "market"
