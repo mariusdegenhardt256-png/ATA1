@@ -16,9 +16,10 @@ BITGET_SECRET_KEY = os.environ.get("BITGET_SECRET_KEY")
 BITGET_PASSPHRASE = os.environ.get("BITGET_PASSPHRASE")
 
 leverage = 10
-amount_usdt = 100
 amount_btc = "0.001"
+amount_usdt = 100
 current_position = None
+entry_price = None
 
 def send_telegram(message, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -27,14 +28,45 @@ def send_telegram(message, reply_markup=None):
         data["reply_markup"] = json.dumps(reply_markup)
     requests.post(url, data=data)
 
-def send_control_panel():
+def calculate_pnl(close_price):
+    if entry_price is None:
+        return 0, 0
+    ep = float(entry_price)
+    cp = float(close_price)
+    if current_position == "long":
+        pnl_pct = ((cp - ep) / ep) * 100 * leverage
+        pnl_usd = (cp - ep) / ep * amount_usdt * leverage
+    else:
+        pnl_pct = ((ep - cp) / ep) * 100 * leverage
+        pnl_usd = (ep - cp) / ep * amount_usdt * leverage
+    return round(pnl_usd, 2), round(pnl_pct, 2)
+
+def get_current_pnl(current_price):
+    return calculate_pnl(current_price)
+
+def send_control_panel(current_price=None):
+    pnl_text = ""
+    pos_text = current_position.upper() if current_position else "Keine"
+    pos_emoji = "🟢" if current_position == "long" else "🔴" if current_position == "short" else "⚪"
+    if current_position and current_price:
+        pnl_usd, pnl_pct = get_current_pnl(current_price)
+        pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
+        pnl_text = f"\n{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
     keyboard = {"inline_keyboard": [
         [{"text": f"💰 Einsatz: {amount_usdt} USDT", "callback_data": "set_amount"},
          {"text": f"⚡ Hebel: {leverage}x", "callback_data": "set_leverage"}],
         [{"text": "📊 Status", "callback_data": "status"},
          {"text": "🛑 Stop ATA2", "callback_data": "stop"}]
     ]}
-    send_telegram("🤖 *ATA2 Kontrollpanel*\n\nWähle eine Option:", reply_markup=keyboard)
+    send_telegram(
+        f"🤖 *ATA2 Kontrollpanel*\n\n"
+        f"{pos_emoji} Position: *{pos_text}*"
+        f"{pnl_text}\n\n"
+        f"💰 Einsatz: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"🎮 Modus: Demo",
+        reply_markup=keyboard
+    )
 
 def sign_request(timestamp, method, path, body=""):
     message = str(timestamp) + method + path + body
@@ -103,56 +135,74 @@ def close_order(side):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    global current_position
+    global current_position, entry_price
     data = request.json
     signal = data.get("signal", "").upper()
     price = data.get("price", "N/A")
+
     if signal == "BUY":
         if current_position == "short":
+            pnl_usd, pnl_pct = calculate_pnl(price)
             close_order("buy")
-            send_telegram("🔄 *Short geschlossen!*\n💰 Preis: $" + str(price))
-        result = open_order("buy")
+            pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
+            send_telegram(
+                f"🔄 *Short geschlossen!*\n\n"
+                f"💵 Eintritt: ${entry_price}\n"
+                f"💵 Austritt: ${price}\n"
+                f"{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
+            )
+        open_order("buy")
         current_position = "long"
+        entry_price = price
         send_telegram(
-            "🟢 *ATA2 – LONG geöffnet!*\n\n"
-            "📊 SBTCSUSDT\n"
-            "💰 Einsatz: " + str(amount_usdt) + " USDT\n"
-            "⚡ Hebel: " + str(leverage) + "x\n"
-            "💵 Preis: $" + str(price) + "\n"
-            "🎮 Demo Modus\n"
-            "📡 Bitget: " + str(result)
+            f"🟢 *ATA2 – LONG geöffnet!*\n\n"
+            f"📊 SBTCSUSDT\n"
+            f"💵 Ausführungspreis: ${price}\n"
+            f"💰 Einsatz: {amount_usdt} USDT\n"
+            f"⚡ Hebel: {leverage}x\n"
+            f"🎮 Demo Modus"
         )
+
     elif signal == "SELL":
         if current_position == "long":
+            pnl_usd, pnl_pct = calculate_pnl(price)
             close_order("sell")
-            send_telegram("🔄 *Long geschlossen!*\n💰 Preis: $" + str(price))
-        result = open_order("sell")
+            pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
+            send_telegram(
+                f"🔄 *Long geschlossen!*\n\n"
+                f"💵 Eintritt: ${entry_price}\n"
+                f"💵 Austritt: ${price}\n"
+                f"{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
+            )
+        open_order("sell")
         current_position = "short"
+        entry_price = price
         send_telegram(
-            "🔴 *ATA2 – SHORT geöffnet!*\n\n"
-            "📊 SBTCSUSDT\n"
-            "💰 Einsatz: " + str(amount_usdt) + " USDT\n"
-            "⚡ Hebel: " + str(leverage) + "x\n"
-            "💵 Preis: $" + str(price) + "\n"
-            "🎮 Demo Modus\n"
-            "📡 Bitget: " + str(result)
+            f"🔴 *ATA2 – SHORT geöffnet!*\n\n"
+            f"📊 SBTCSUSDT\n"
+            f"💵 Ausführungspreis: ${price}\n"
+            f"💰 Einsatz: {amount_usdt} USDT\n"
+            f"⚡ Hebel: {leverage}x\n"
+            f"🎮 Demo Modus"
         )
+
     return "OK", 200
 
 @app.route('/telegram', methods=['POST'])
 def telegram_update():
     global leverage, amount_usdt
     data = request.json
+
+    message = data.get("message", {})
+    text = message.get("text", "")
+    if text == "/start":
+        send_control_panel()
+        return "OK", 200
+
     callback = data.get("callback_query", {})
     callback_data = callback.get("data", "")
     if callback_data == "status":
-        send_telegram(
-            "📊 *ATA2 Status*\n\n"
-            "📍 Position: " + str(current_position or "Keine") + "\n"
-            "💰 Einsatz: " + str(amount_usdt) + " USDT\n"
-            "⚡ Hebel: " + str(leverage) + "x\n"
-            "🎮 Modus: Demo"
-        )
+        send_control_panel()
     elif callback_data == "set_amount":
         send_telegram("💰 Schreibe den neuen Einsatz:\nz.B: *100*")
     elif callback_data == "set_leverage":
@@ -168,16 +218,18 @@ def panel():
 
 @app.route('/test-buy')
 def test_buy():
-    global current_position
+    global current_position, entry_price
     result = open_order("buy")
     current_position = "long"
+    entry_price = "65000"
     send_telegram(
-        "🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
-        "📊 SBTCSUSDT\n"
-        "💰 Einsatz: " + str(amount_usdt) + " USDT\n"
-        "⚡ Hebel: " + str(leverage) + "x\n"
-        "🎮 Demo Modus\n"
-        "📡 Bitget Antwort: " + str(result)
+        f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
+        f"📊 SBTCSUSDT\n"
+        f"💵 Ausführungspreis: $65000\n"
+        f"💰 Einsatz: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"🎮 Demo Modus\n"
+        f"📡 Bitget: {str(result)}"
     )
     return "Test gesendet!", 200
 
