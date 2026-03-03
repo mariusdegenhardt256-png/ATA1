@@ -38,13 +38,11 @@ def sign_request(timestamp, method, path, body=""):
 def bitget_request(method, path, params=None, body=None):
     timestamp = str(int(time.time() * 1000))
     body_str = json.dumps(body) if body else ""
-    
     if params:
         query_string = "&".join([f"{k}={v}" for k, v in params.items()])
         sign_path = path + "?" + query_string
     else:
         sign_path = path
-    
     signature = sign_request(timestamp, method, sign_path, body_str)
     base_url = "https://api.bitget.com"
     headers = {
@@ -70,7 +68,6 @@ def get_position_from_bitget():
             "marginCoin": "SUSDT"
         }
         result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
-        send_telegram(f"🔍 Debug API: {str(result)}")
         if result.get("code") == "00000" and result.get("data"):
             data = result["data"]
             if isinstance(data, list) and len(data) > 0:
@@ -82,8 +79,7 @@ def get_position_from_bitget():
                 if float(size) > 0:
                     return hold_side, avg_price, unrealized_pnl
         return None, None, None
-    except Exception as e:
-        send_telegram(f"❌ Debug Fehler: {str(e)}")
+    except:
         return None, None, None
 
 def calculate_pnl(close_price):
@@ -306,8 +302,7 @@ def test_buy():
         f"💵 Ausführungspreis: $65000\n"
         f"💰 Einsatz: {amount_usdt} USDT\n"
         f"⚡ Hebel: {leverage}x\n"
-        f"🎮 Demo Modus\n"
-        f"📡 Bitget: {str(result)}"
+        f"🎮 Demo Modus"
     )
     return "Test gesendet!", 200
 
