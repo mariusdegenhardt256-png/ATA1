@@ -16,7 +16,6 @@ BITGET_SECRET_KEY = os.environ.get("BITGET_SECRET_KEY")
 BITGET_PASSPHRASE = os.environ.get("BITGET_PASSPHRASE")
 
 leverage = 10
-amount_btc = "0.001"
 amount_usdt = 100
 current_position = None
 entry_price = None
@@ -59,6 +58,19 @@ def bitget_request(method, path, params=None, body=None):
     else:
         response = requests.post(url, headers=headers, data=body_str)
     return response.json()
+
+def get_btc_size():
+    try:
+        params = {
+            "symbol": "SBTCSUSDT",
+            "productType": "SUSDT-FUTURES"
+        }
+        result = bitget_request("GET", "/api/v2/mix/market/ticker", params=params)
+        price = float(result["data"][0]["lastPr"])
+        size = amount_usdt / price
+        return str(round(size, 4))
+    except:
+        return "0.0015"
 
 def get_position_from_bitget():
     try:
@@ -147,13 +159,14 @@ def set_leverage_bitget():
 
 def open_order(side):
     set_leverage_bitget()
+    btc_size = get_btc_size()
     path = "/api/v2/mix/order/place-order"
     body = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
-        "size": amount_btc,
+        "size": btc_size,
         "side": side,
         "tradeSide": "open",
         "orderType": "market"
@@ -161,13 +174,26 @@ def open_order(side):
     return bitget_request("POST", path, body=body)
 
 def close_order(side):
+    hold_side, avg_price, unrealized_pnl = get_position_from_bitget()
+    if hold_side is None:
+        return None
+    params = {
+        "symbol": "SBTCSUSDT",
+        "productType": "SUSDT-FUTURES",
+        "marginCoin": "SUSDT"
+    }
+    result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
+    try:
+        size = result["data"][0]["total"]
+    except:
+        size = "0.0015"
     path = "/api/v2/mix/order/place-order"
     body = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
-        "size": amount_btc,
+        "size": size,
         "side": side,
         "tradeSide": "close",
         "orderType": "market"
@@ -302,7 +328,8 @@ def test_buy():
         f"💵 Ausführungspreis: $65000\n"
         f"💰 Einsatz: {amount_usdt} USDT\n"
         f"⚡ Hebel: {leverage}x\n"
-        f"🎮 Demo Modus"
+        f"🎮 Demo Modus\n"
+        f"📡 Bitget: {str(result)}"
     )
     return "Test gesendet!", 200
 
