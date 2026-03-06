@@ -17,8 +17,6 @@ BITGET_PASSPHRASE = os.environ.get("BITGET_PASSPHRASE")
 
 leverage = 10
 amount_usdt = 100
-current_position = None
-entry_price = None
 waiting_for = None
 
 def send_telegram(message, reply_markup=None):
@@ -69,6 +67,34 @@ def get_btc_size():
     except:
         return "0.0145"
 
+def get_current_position():
+    try:
+        params = {
+            "symbol": "SBTCSUSDT",
+            "productType": "SUSDT-FUTURES",
+            "marginCoin": "SUSDT"
+        }
+        result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
+        if result.get("code") == "00000" and result.get("data"):
+            data = result["data"]
+            if isinstance(data, dict):
+                pos = data
+            elif isinstance(data, list) and len(data) > 0:
+                pos = data[0]
+            else:
+                return None, None, None, None
+            size = float(pos.get("total", "0"))
+            if size > 0:
+                return (
+                    pos.get("holdSide"),
+                    pos.get("openPriceAvg"),
+                    pos.get("unrealizedPL"),
+                    pos.get("total")
+                )
+        return None, None, None, None
+    except:
+        return None, None, None, None
+
 def get_all_positions():
     try:
         params = {"productType": "SUSDT-FUTURES", "marginCoin": "SUSDT"}
@@ -87,44 +113,19 @@ def get_all_positions():
     except:
         return []
 
-def get_position_from_bitget():
+def calculate_pnl(entry, close, hold_side):
     try:
-        params = {
-            "symbol": "SBTCSUSDT",
-            "productType": "SUSDT-FUTURES",
-            "marginCoin": "SUSDT"
-        }
-        result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
-        if result.get("code") == "00000" and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                pos = data
-            elif isinstance(data, list) and len(data) > 0:
-                pos = data[0]
-            else:
-                return None, None, None
-            hold_side = pos.get("holdSide", "")
-            avg_price = pos.get("openPriceAvg", None)
-            size = pos.get("total", "0")
-            unrealized_pnl = pos.get("unrealizedPL", "0")
-            if float(size) > 0:
-                return hold_side, avg_price, unrealized_pnl
-        return None, None, None
+        ep = float(entry)
+        cp = float(close)
+        if hold_side == "long":
+            pnl_pct = ((cp - ep) / ep) * 100 * leverage
+            pnl_usd = (cp - ep) / ep * amount_usdt * leverage
+        else:
+            pnl_pct = ((ep - cp) / ep) * 100 * leverage
+            pnl_usd = (ep - cp) / ep * amount_usdt * leverage
+        return round(pnl_usd, 2), round(pnl_pct, 2)
     except:
-        return None, None, None
-
-def calculate_pnl(close_price):
-    if entry_price is None:
         return 0, 0
-    ep = float(entry_price)
-    cp = float(close_price)
-    if current_position == "long":
-        pnl_pct = ((cp - ep) / ep) * 100 * leverage
-        pnl_usd = (cp - ep) / ep * amount_usdt * leverage
-    else:
-        pnl_pct = ((ep - cp) / ep) * 100 * leverage
-        pnl_usd = (ep - cp) / ep * amount_usdt * leverage
-    return round(pnl_usd, 2), round(pnl_pct, 2)
 
 def send_status():
     positions = get_all_positions()
@@ -173,11 +174,8 @@ def send_status():
     send_telegram(msg)
 
 def send_control_panel():
-    global current_position, entry_price
-    hold_side, avg_price, unrealized_pnl = get_position_from_bitget()
+    hold_side, avg_price, unrealized_pnl, size = get_current_position()
     if hold_side:
-        current_position = hold_side
-        entry_price = avg_price
         pos_emoji = "🟢" if hold_side == "long" else "🔴"
         try:
             pnl = float(unrealized_pnl)
@@ -188,8 +186,6 @@ def send_control_panel():
         pos_text = hold_side.upper()
         entry_text = f"\n💵 Eintritt: ${avg_price}" if avg_price else ""
     else:
-        current_position = None
-        entry_price = None
         pos_emoji = "⚪"
         pos_text = "Keine"
         pnl_text = ""
@@ -239,28 +235,14 @@ def open_order(side):
     }
     return bitget_request("POST", path, body=body)
 
-def close_order(side):
-    params = {
-        "symbol": "SBTCSUSDT",
-        "productType": "SUSDT-FUTURES",
-        "marginCoin": "SUSDT"
-    }
-    result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
-    try:
-        data = result["data"]
-        if isinstance(data, dict):
-            size = data["total"]
-        else:
-            size = data[0]["total"]
-    except:
-        size = get_btc_size()
+def close_order(side, size):
     path = "/api/v2/mix/order/place-order"
     body = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
-        "size": size,
+        "size": str(size),
         "side": side,
         "tradeSide": "close",
         "orderType": "market"
@@ -269,25 +251,24 @@ def close_order(side):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    global current_position, entry_price
     data = request.json
     signal = data.get("signal", "").upper()
     price = data.get("price", "N/A")
 
+    hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
+
     if signal == "BUY":
-        if current_position == "short":
-            pnl_usd, pnl_pct = calculate_pnl(price)
-            close_order("buy")
+        if hold_side == "short":
+            pnl_usd, pnl_pct = calculate_pnl(avg_price, price, "short")
+            close_order("buy", pos_size)
             pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
             send_telegram(
                 f"🔄 *Short geschlossen!*\n\n"
-                f"💵 Eintritt: ${entry_price}\n"
+                f"💵 Eintritt: ${avg_price}\n"
                 f"💵 Austritt: ${price}\n"
                 f"{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
             )
         open_order("buy")
-        current_position = "long"
-        entry_price = price
         send_telegram(
             f"🟢 *ATA2 – LONG geöffnet!*\n\n"
             f"📊 SBTCSUSDT\n"
@@ -299,19 +280,17 @@ def webhook():
         )
 
     elif signal == "SELL":
-        if current_position == "long":
-            pnl_usd, pnl_pct = calculate_pnl(price)
-            close_order("sell")
+        if hold_side == "long":
+            pnl_usd, pnl_pct = calculate_pnl(avg_price, price, "long")
+            close_order("sell", pos_size)
             pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
             send_telegram(
                 f"🔄 *Long geschlossen!*\n\n"
-                f"💵 Eintritt: ${entry_price}\n"
+                f"💵 Eintritt: ${avg_price}\n"
                 f"💵 Austritt: ${price}\n"
                 f"{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
             )
         open_order("sell")
-        current_position = "short"
-        entry_price = price
         send_telegram(
             f"🔴 *ATA2 – SHORT geöffnet!*\n\n"
             f"📊 SBTCSUSDT\n"
@@ -387,14 +366,30 @@ def panel():
 
 @app.route('/test-buy')
 def test_buy():
-    global current_position, entry_price
     result = open_order("buy")
-    current_position = "long"
-    entry_price = "65000"
     send_telegram(
         f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
         f"📊 SBTCSUSDT\n"
-        f"💵 Ausführungspreis: $65000\n"
+        f"💵 Ausführungspreis: $aktuell\n"
+        f"💰 Margin: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
+        f"🎮 Demo Modus\n"
+        f"📡 Bitget: {str(result)}"
+    )
+    return "Test gesendet!", 200
+
+@app.route('/test-sell')
+def test_sell():
+    hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
+    if hold_side == "long":
+        pnl_usd, pnl_pct = calculate_pnl(avg_price, avg_price, "long")
+        close_order("sell", pos_size)
+        send_telegram(f"🔄 *Long geschlossen (Test)!*\n\n💵 Eintritt: ${avg_price}")
+    result = open_order("sell")
+    send_telegram(
+        f"🔴 *ATA2 TEST – SHORT geöffnet!*\n\n"
+        f"📊 SBTCSUSDT\n"
         f"💰 Margin: {amount_usdt} USDT\n"
         f"⚡ Hebel: {leverage}x\n"
         f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
