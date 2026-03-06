@@ -73,17 +73,18 @@ def get_all_positions():
     try:
         params = {"productType": "SUSDT-FUTURES", "marginCoin": "SUSDT"}
         result = bitget_request("GET", "/api/v2/mix/position/all-position", params=params)
-        send_telegram(f"🔍 Debug: {str(result)[:1000]}")
         if result.get("code") == "00000" and result.get("data"):
+            data = result["data"]
+            if isinstance(data, dict):
+                data = [data]
             positions = []
-            for pos in result["data"]:
+            for pos in data:
                 size = float(pos.get("total", "0"))
                 if size > 0:
                     positions.append(pos)
             return positions
         return []
-    except Exception as e:
-        send_telegram(f"❌ Fehler: {str(e)}")
+    except:
         return []
 
 def get_position_from_bitget():
@@ -96,14 +97,18 @@ def get_position_from_bitget():
         result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
         if result.get("code") == "00000" and result.get("data"):
             data = result["data"]
-            if isinstance(data, list) and len(data) > 0:
+            if isinstance(data, dict):
+                pos = data
+            elif isinstance(data, list) and len(data) > 0:
                 pos = data[0]
-                hold_side = pos.get("holdSide", "")
-                avg_price = pos.get("averageOpenPrice", None)
-                size = pos.get("total", "0")
-                unrealized_pnl = pos.get("unrealizedPL", "0")
-                if float(size) > 0:
-                    return hold_side, avg_price, unrealized_pnl
+            else:
+                return None, None, None
+            hold_side = pos.get("holdSide", "")
+            avg_price = pos.get("openPriceAvg", None)
+            size = pos.get("total", "0")
+            unrealized_pnl = pos.get("unrealizedPL", "0")
+            if float(size) > 0:
+                return hold_side, avg_price, unrealized_pnl
         return None, None, None
     except:
         return None, None, None
@@ -137,11 +142,11 @@ def send_status():
         total_pnl += pnl
         pnl_emoji = "📈" if pnl >= 0 else "📉"
 
-        entry = float(pos.get("openPriceAvg", pos.get("averageOpenPrice", pos.get("avgOpenPrice", "0"))))
-        current = float(pos.get("markPrice", pos.get("marketPrice", pos.get("lastPrice", "0"))))
-        margin = float(pos.get("marginSize", pos.get("margin", pos.get("initialMargin", "0"))))
+        entry = float(pos.get("openPriceAvg", "0"))
+        current = float(pos.get("markPrice", "0"))
+        margin = float(pos.get("marginSize", "0"))
         lev = pos.get("leverage", "0")
-        liq = float(pos.get("liquidationPrice", pos.get("liqPrice", "0")))
+        liq = float(pos.get("liquidationPrice", "0"))
         size = pos.get("total", "0")
 
         if entry > 0 and current > 0:
@@ -154,12 +159,12 @@ def send_status():
 
         msg += (
             f"{pos_emoji} *{pos.get('symbol', 'SBTCSUSDT')} – {side}*\n"
-            f"💵 Eintritt: ${round(entry, 2) if entry > 0 else 'N/A'}\n"
-            f"💵 Aktuell: ${round(current, 2) if current > 0 else 'N/A'}\n"
-            f"💰 Margin: ${round(margin, 2) if margin > 0 else 'N/A'}\n"
+            f"💵 Eintritt: ${round(entry, 2)}\n"
+            f"💵 Aktuell: ${round(current, 2)}\n"
+            f"💰 Margin: ${round(margin, 2)}\n"
             f"⚡ Hebel: {lev}x\n"
             f"📊 Größe: {size} BTC\n"
-            f"🔥 Liquidation: ${round(liq, 2) if liq > 0 else 'N/A'}\n"
+            f"🔥 Liquidation: ${round(liq, 2)}\n"
             f"{pnl_emoji} PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)\n\n"
         )
 
@@ -242,7 +247,11 @@ def close_order(side):
     }
     result = bitget_request("GET", "/api/v2/mix/position/single-position", params=params)
     try:
-        size = result["data"][0]["total"]
+        data = result["data"]
+        if isinstance(data, dict):
+            size = data["total"]
+        else:
+            size = data[0]["total"]
     except:
         size = get_btc_size()
     path = "/api/v2/mix/order/place-order"
