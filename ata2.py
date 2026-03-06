@@ -73,25 +73,17 @@ def get_all_positions():
     try:
         params = {"productType": "SUSDT-FUTURES", "marginCoin": "SUSDT"}
         result = bitget_request("GET", "/api/v2/mix/position/all-position", params=params)
+        send_telegram(f"🔍 Debug: {str(result)[:1000]}")
         if result.get("code") == "00000" and result.get("data"):
             positions = []
             for pos in result["data"]:
                 size = float(pos.get("total", "0"))
                 if size > 0:
-                    positions.append({
-                        "symbol": pos.get("symbol", ""),
-                        "holdSide": pos.get("holdSide", ""),
-                        "size": size,
-                        "averageOpenPrice": pos.get("averageOpenPrice", "0"),
-                        "marketPrice": pos.get("marketPrice", "0"),
-                        "unrealizedPL": pos.get("unrealizedPL", "0"),
-                        "margin": pos.get("margin", "0"),
-                        "leverage": pos.get("leverage", "0"),
-                        "liquidationPrice": pos.get("liquidationPrice", "0"),
-                    })
+                    positions.append(pos)
             return positions
         return []
-    except:
+    except Exception as e:
+        send_telegram(f"❌ Fehler: {str(e)}")
         return []
 
 def get_position_from_bitget():
@@ -139,34 +131,35 @@ def send_status():
     total_pnl = 0
 
     for pos in positions:
-        side = pos["holdSide"].upper()
-        pos_emoji = "🟢" if pos["holdSide"] == "long" else "🔴"
-        pnl = float(pos["unrealizedPL"])
+        side = pos.get("holdSide", "").upper()
+        pos_emoji = "🟢" if pos.get("holdSide") == "long" else "🔴"
+        pnl = float(pos.get("unrealizedPL", "0"))
         total_pnl += pnl
         pnl_emoji = "📈" if pnl >= 0 else "📉"
 
-        entry = float(pos["averageOpenPrice"])
-        current = float(pos["marketPrice"])
-        margin = float(pos["margin"])
-        lev = pos["leverage"]
-        liq = pos["liquidationPrice"]
+        entry = float(pos.get("openPriceAvg", pos.get("averageOpenPrice", pos.get("avgOpenPrice", "0"))))
+        current = float(pos.get("markPrice", pos.get("marketPrice", pos.get("lastPrice", "0"))))
+        margin = float(pos.get("marginSize", pos.get("margin", pos.get("initialMargin", "0"))))
+        lev = pos.get("leverage", "0")
+        liq = float(pos.get("liquidationPrice", pos.get("liqPrice", "0")))
+        size = pos.get("total", "0")
 
-        if entry > 0:
+        if entry > 0 and current > 0:
             pnl_pct = ((current - entry) / entry) * 100
-            if pos["holdSide"] == "short":
+            if pos.get("holdSide") == "short":
                 pnl_pct = -pnl_pct
             pnl_pct = round(pnl_pct * float(lev), 2)
         else:
             pnl_pct = 0
 
         msg += (
-            f"{pos_emoji} *{pos['symbol']} – {side}*\n"
-            f"💵 Eintritt: ${round(entry, 2)}\n"
-            f"💵 Aktuell: ${round(current, 2)}\n"
-            f"💰 Margin: ${round(margin, 2)}\n"
+            f"{pos_emoji} *{pos.get('symbol', 'SBTCSUSDT')} – {side}*\n"
+            f"💵 Eintritt: ${round(entry, 2) if entry > 0 else 'N/A'}\n"
+            f"💵 Aktuell: ${round(current, 2) if current > 0 else 'N/A'}\n"
+            f"💰 Margin: ${round(margin, 2) if margin > 0 else 'N/A'}\n"
             f"⚡ Hebel: {lev}x\n"
-            f"📊 Größe: {pos['size']} BTC\n"
-            f"🔥 Liquidation: ${round(float(liq), 2)}\n"
+            f"📊 Größe: {size} BTC\n"
+            f"🔥 Liquidation: ${round(liq, 2) if liq > 0 else 'N/A'}\n"
             f"{pnl_emoji} PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)\n\n"
         )
 
