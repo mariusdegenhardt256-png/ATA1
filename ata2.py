@@ -386,19 +386,12 @@ def test_buy():
 @app.route('/test-sell')
 def test_sell():
     hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
+    send_telegram(f"🔍 Position gefunden: {hold_side} | Größe: {pos_size}")
     if hold_side == "long":
-        close_order("long", pos_size)
-        send_telegram(f"🔄 *Long geschlossen (Test)!*\n\n💵 Eintritt: ${avg_price}")
+        result_close = close_order("long", pos_size)
+        send_telegram(f"🔄 Close Antwort: {str(result_close)}")
     result = open_order("sell")
-    send_telegram(
-        f"🔴 *ATA2 TEST – SHORT geöffnet!*\n\n"
-        f"📊 SBTCSUSDT\n"
-        f"💰 Margin: {amount_usdt} USDT\n"
-        f"⚡ Hebel: {leverage}x\n"
-        f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
-        f"🎮 Demo Modus\n"
-        f"📡 Bitget: {str(result)}"
-    )
+    send_telegram(f"📡 Open Antwort: {str(result)}")
     return "Test gesendet!", 200
 
 @app.route('/')
