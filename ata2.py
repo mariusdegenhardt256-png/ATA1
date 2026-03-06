@@ -61,16 +61,38 @@ def bitget_request(method, path, params=None, body=None):
 
 def get_btc_size():
     try:
-        params = {
-            "symbol": "SBTCSUSDT",
-            "productType": "SUSDT-FUTURES"
-        }
+        params = {"symbol": "SBTCSUSDT", "productType": "SUSDT-FUTURES"}
         result = bitget_request("GET", "/api/v2/mix/market/ticker", params=params)
         price = float(result["data"][0]["lastPr"])
         size = (amount_usdt * leverage) / price
         return str(round(size, 4))
     except:
         return "0.0145"
+
+def get_all_positions():
+    try:
+        params = {"productType": "SUSDT-FUTURES", "marginCoin": "SUSDT"}
+        result = bitget_request("GET", "/api/v2/mix/position/all-position", params=params)
+        if result.get("code") == "00000" and result.get("data"):
+            positions = []
+            for pos in result["data"]:
+                size = float(pos.get("total", "0"))
+                if size > 0:
+                    positions.append({
+                        "symbol": pos.get("symbol", ""),
+                        "holdSide": pos.get("holdSide", ""),
+                        "size": size,
+                        "averageOpenPrice": pos.get("averageOpenPrice", "0"),
+                        "marketPrice": pos.get("marketPrice", "0"),
+                        "unrealizedPL": pos.get("unrealizedPL", "0"),
+                        "margin": pos.get("margin", "0"),
+                        "leverage": pos.get("leverage", "0"),
+                        "liquidationPrice": pos.get("liquidationPrice", "0"),
+                    })
+            return positions
+        return []
+    except:
+        return []
 
 def get_position_from_bitget():
     try:
@@ -107,6 +129,51 @@ def calculate_pnl(close_price):
         pnl_usd = (ep - cp) / ep * amount_usdt * leverage
     return round(pnl_usd, 2), round(pnl_pct, 2)
 
+def send_status():
+    positions = get_all_positions()
+    if not positions:
+        send_telegram("📊 *ATA2 Status*\n\n⚪ Keine offenen Positionen")
+        return
+
+    msg = "📊 *ATA2 Status – Offene Positionen*\n\n"
+    total_pnl = 0
+
+    for pos in positions:
+        side = pos["holdSide"].upper()
+        pos_emoji = "🟢" if pos["holdSide"] == "long" else "🔴"
+        pnl = float(pos["unrealizedPL"])
+        total_pnl += pnl
+        pnl_emoji = "📈" if pnl >= 0 else "📉"
+
+        entry = float(pos["averageOpenPrice"])
+        current = float(pos["marketPrice"])
+        margin = float(pos["margin"])
+        lev = pos["leverage"]
+        liq = pos["liquidationPrice"]
+
+        if entry > 0:
+            pnl_pct = ((current - entry) / entry) * 100
+            if pos["holdSide"] == "short":
+                pnl_pct = -pnl_pct
+            pnl_pct = round(pnl_pct * float(lev), 2)
+        else:
+            pnl_pct = 0
+
+        msg += (
+            f"{pos_emoji} *{pos['symbol']} – {side}*\n"
+            f"💵 Eintritt: ${round(entry, 2)}\n"
+            f"💵 Aktuell: ${round(current, 2)}\n"
+            f"💰 Margin: ${round(margin, 2)}\n"
+            f"⚡ Hebel: {lev}x\n"
+            f"📊 Größe: {pos['size']} BTC\n"
+            f"🔥 Liquidation: ${round(float(liq), 2)}\n"
+            f"{pnl_emoji} PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)\n\n"
+        )
+
+    total_emoji = "📈" if total_pnl >= 0 else "📉"
+    msg += f"─────────────────\n{total_emoji} *Gesamt PnL: {'+' if total_pnl >= 0 else ''}{round(total_pnl, 2)}$*"
+    send_telegram(msg)
+
 def send_control_panel():
     global current_position, entry_price
     hold_side, avg_price, unrealized_pnl = get_position_from_bitget()
@@ -131,7 +198,7 @@ def send_control_panel():
         entry_text = ""
 
     keyboard = {"inline_keyboard": [
-        [{"text": f"💰 Einsatz: {amount_usdt} USDT", "callback_data": "set_amount"},
+        [{"text": f"💰 Margin: {amount_usdt} USDT", "callback_data": "set_amount"},
          {"text": f"⚡ Hebel: {leverage}x", "callback_data": "set_leverage"}],
         [{"text": "📊 Status", "callback_data": "status"},
          {"text": "🛑 Stop ATA2", "callback_data": "stop"}]
@@ -299,7 +366,7 @@ def telegram_update():
     callback_data = callback.get("data", "")
 
     if callback_data == "status":
-        send_control_panel()
+        send_status()
     elif callback_data == "set_amount":
         waiting_for = "amount"
         send_telegram("💰 Schreibe die neue Margin in USDT:\nz.B: *100*")
