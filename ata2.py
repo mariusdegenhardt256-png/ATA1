@@ -230,7 +230,6 @@ def open_order(side):
         "marginCoin": "SUSDT",
         "size": btc_size,
         "side": side,
-        "tradeSide": "open",
         "orderType": "market"
     }
     return bitget_request("POST", path, body=body)
@@ -245,7 +244,6 @@ def close_order(hold_side, size):
         "marginCoin": "SUSDT",
         "size": str(size),
         "side": close_side,
-        "tradeSide": "close",
         "orderType": "market"
     }
     return bitget_request("POST", path, body=body)
