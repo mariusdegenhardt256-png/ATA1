@@ -67,10 +67,10 @@ def get_btc_size():
         }
         result = bitget_request("GET", "/api/v2/mix/market/ticker", params=params)
         price = float(result["data"][0]["lastPr"])
-        size = amount_usdt / price
+        size = (amount_usdt * leverage) / price
         return str(round(size, 4))
     except:
-        return "0.0015"
+        return "0.0145"
 
 def get_position_from_bitget():
     try:
@@ -141,8 +141,9 @@ def send_control_panel():
         f"{pos_emoji} Position: *{pos_text}*"
         f"{entry_text}"
         f"{pnl_text}\n\n"
-        f"💰 Einsatz: {amount_usdt} USDT\n"
+        f"💰 Margin: {amount_usdt} USDT\n"
         f"⚡ Hebel: {leverage}x\n"
+        f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
         f"🎮 Modus: Demo",
         reply_markup=keyboard
     )
@@ -174,9 +175,6 @@ def open_order(side):
     return bitget_request("POST", path, body=body)
 
 def close_order(side):
-    hold_side, avg_price, unrealized_pnl = get_position_from_bitget()
-    if hold_side is None:
-        return None
     params = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
@@ -186,7 +184,7 @@ def close_order(side):
     try:
         size = result["data"][0]["total"]
     except:
-        size = "0.0015"
+        size = get_btc_size()
     path = "/api/v2/mix/order/place-order"
     body = {
         "symbol": "SBTCSUSDT",
@@ -225,8 +223,9 @@ def webhook():
             f"🟢 *ATA2 – LONG geöffnet!*\n\n"
             f"📊 SBTCSUSDT\n"
             f"💵 Ausführungspreis: ${price}\n"
-            f"💰 Einsatz: {amount_usdt} USDT\n"
+            f"💰 Margin: {amount_usdt} USDT\n"
             f"⚡ Hebel: {leverage}x\n"
+            f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
             f"🎮 Demo Modus"
         )
 
@@ -248,8 +247,9 @@ def webhook():
             f"🔴 *ATA2 – SHORT geöffnet!*\n\n"
             f"📊 SBTCSUSDT\n"
             f"💵 Ausführungspreis: ${price}\n"
-            f"💰 Einsatz: {amount_usdt} USDT\n"
+            f"💰 Margin: {amount_usdt} USDT\n"
             f"⚡ Hebel: {leverage}x\n"
+            f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
             f"🎮 Demo Modus"
         )
 
@@ -273,7 +273,7 @@ def telegram_update():
             if 10 <= new_amount <= 10000:
                 amount_usdt = new_amount
                 waiting_for = None
-                send_telegram(f"✅ Einsatz auf *{new_amount} USDT* gesetzt!")
+                send_telegram(f"✅ Margin auf *{new_amount} USDT* gesetzt!\n📊 Positionswert: ~{new_amount * leverage} USDT")
                 send_control_panel()
             else:
                 send_telegram("❌ Bitte zwischen 10 und 10000 USDT eingeben!")
@@ -287,7 +287,7 @@ def telegram_update():
             if 1 <= new_leverage <= 125:
                 leverage = new_leverage
                 waiting_for = None
-                send_telegram(f"✅ Hebel auf *{new_leverage}x* gesetzt!")
+                send_telegram(f"✅ Hebel auf *{new_leverage}x* gesetzt!\n📊 Positionswert: ~{amount_usdt * new_leverage} USDT")
                 send_control_panel()
             else:
                 send_telegram("❌ Bitte zwischen 1 und 125 eingeben!")
@@ -302,7 +302,7 @@ def telegram_update():
         send_control_panel()
     elif callback_data == "set_amount":
         waiting_for = "amount"
-        send_telegram("💰 Schreibe den neuen Einsatz in USDT:\nz.B: *100*")
+        send_telegram("💰 Schreibe die neue Margin in USDT:\nz.B: *100*")
     elif callback_data == "set_leverage":
         waiting_for = "leverage"
         send_telegram("⚡ Schreibe den neuen Hebel:\nz.B: *25*")
@@ -326,8 +326,9 @@ def test_buy():
         f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
         f"📊 SBTCSUSDT\n"
         f"💵 Ausführungspreis: $65000\n"
-        f"💰 Einsatz: {amount_usdt} USDT\n"
+        f"💰 Margin: {amount_usdt} USDT\n"
         f"⚡ Hebel: {leverage}x\n"
+        f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
         f"🎮 Demo Modus\n"
         f"📡 Bitget: {str(result)}"
     )
