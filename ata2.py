@@ -235,18 +235,13 @@ def open_order(side):
     }
     return bitget_request("POST", path, body=body)
 
-def close_order(hold_side, size):
-    path = "/api/v2/mix/order/place-order"
-    close_side = "sell" if hold_side == "long" else "buy"
+def close_order(hold_side):
+    path = "/api/v2/mix/order/close-positions"
     body = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
-        "marginMode": "crossed",
         "marginCoin": "SUSDT",
-        "size": str(size),
-        "side": close_side,
-        "orderType": "market",
-        "reduceOnly": "YES"
+        "holdSide": hold_side
     }
     return bitget_request("POST", path, body=body)
 
@@ -261,7 +256,7 @@ def webhook():
     if signal == "BUY":
         if hold_side == "short":
             pnl_usd, pnl_pct = calculate_pnl(avg_price, price, "short")
-            close_order("short", pos_size)
+            close_order("short")
             pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
             send_telegram(
                 f"🔄 *Short geschlossen!*\n\n"
@@ -283,7 +278,7 @@ def webhook():
     elif signal == "SELL":
         if hold_side == "long":
             pnl_usd, pnl_pct = calculate_pnl(avg_price, price, "long")
-            close_order("long", pos_size)
+            close_order("long")
             pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
             send_telegram(
                 f"🔄 *Long geschlossen!*\n\n"
@@ -384,7 +379,7 @@ def test_sell():
     hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
     send_telegram(f"🔍 Position: {hold_side} | Größe: {pos_size}")
     if hold_side == "long":
-        result_close = close_order("long", pos_size)
+        result_close = close_order("long")
         send_telegram(f"🔄 Close Antwort: {str(result_close)}")
     result = open_order("sell")
     send_telegram(f"📡 Open Antwort: {str(result)}")
