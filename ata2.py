@@ -388,6 +388,58 @@ def test_sell():
     send_telegram(f"📡 Open Antwort: {str(result)}")
     return "Test gesendet!", 200
 
+@app.route('/test-webhook-sell')
+def test_webhook_sell():
+    hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
+    price = avg_price if avg_price else "70000"
+    if hold_side == "long":
+        pnl_usd, pnl_pct = calculate_pnl(avg_price, price, "long")
+        close_order("long", pos_size)
+        pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
+        send_telegram(
+            f"🔄 *Long geschlossen!*\n\n"
+            f"💵 Eintritt: ${avg_price}\n"
+            f"💵 Austritt: ${price}\n"
+            f"{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
+        )
+    open_order("sell")
+    send_telegram(
+        f"🔴 *ATA2 TEST – SHORT geöffnet!*\n\n"
+        f"📊 SBTCSUSDT\n"
+        f"💵 Ausführungspreis: ${price}\n"
+        f"💰 Margin: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
+        f"🎮 Demo Modus"
+    )
+    return "Test gesendet!", 200
+
+@app.route('/test-webhook-buy')
+def test_webhook_buy():
+    hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
+    price = avg_price if avg_price else "70000"
+    if hold_side == "short":
+        pnl_usd, pnl_pct = calculate_pnl(avg_price, price, "short")
+        close_order("short", pos_size)
+        pnl_emoji = "📈" if pnl_usd >= 0 else "📉"
+        send_telegram(
+            f"🔄 *Short geschlossen!*\n\n"
+            f"💵 Eintritt: ${avg_price}\n"
+            f"💵 Austritt: ${price}\n"
+            f"{pnl_emoji} PnL: {'+' if pnl_usd >= 0 else ''}{pnl_usd}$ ({'+' if pnl_pct >= 0 else ''}{pnl_pct}%)"
+        )
+    open_order("buy")
+    send_telegram(
+        f"🟢 *ATA2 TEST – LONG geöffnet!*\n\n"
+        f"📊 SBTCSUSDT\n"
+        f"💵 Ausführungspreis: ${price}\n"
+        f"💰 Margin: {amount_usdt} USDT\n"
+        f"⚡ Hebel: {leverage}x\n"
+        f"📊 Positionswert: ~{amount_usdt * leverage} USDT\n"
+        f"🎮 Demo Modus"
+    )
+    return "Test gesendet!", 200
+
 @app.route('/')
 def home():
     return "ATA2 laeuft! ✅"
