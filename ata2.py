@@ -67,7 +67,7 @@ def get_btc_size():
     except:
         return "0.0145"
 
-def get_current_position(hold_side=None):
+def get_current_position():
     try:
         params = {
             "symbol": "SBTCSUSDT",
@@ -83,17 +83,15 @@ def get_current_position(hold_side=None):
                 positions = data
             else:
                 return None, None, None, None
-
             for pos in positions:
                 size = float(pos.get("total", "0"))
                 if size > 0:
-                    if hold_side is None or pos.get("holdSide") == hold_side:
-                        return (
-                            pos.get("holdSide"),
-                            pos.get("openPriceAvg"),
-                            pos.get("unrealizedPL"),
-                            pos.get("total")
-                        )
+                    return (
+                        pos.get("holdSide"),
+                        pos.get("openPriceAvg"),
+                        pos.get("unrealizedPL"),
+                        pos.get("total")
+                    )
         return None, None, None, None
     except:
         return None, None, None, None
@@ -145,7 +143,6 @@ def send_status():
         pnl = float(pos.get("unrealizedPL", "0"))
         total_pnl += pnl
         pnl_emoji = "📈" if pnl >= 0 else "📉"
-
         entry = float(pos.get("openPriceAvg", "0"))
         current = float(pos.get("markPrice", "0"))
         margin = float(pos.get("marginSize", "0"))
@@ -248,9 +245,8 @@ def close_order(hold_side, size):
         "marginCoin": "SUSDT",
         "size": str(size),
         "side": close_side,
-        "tradeSide": "close",
         "orderType": "market",
-        "holdSide": hold_side
+        "reduceOnly": "YES"
     }
     return bitget_request("POST", path, body=body)
 
@@ -386,7 +382,7 @@ def test_buy():
 @app.route('/test-sell')
 def test_sell():
     hold_side, avg_price, unrealized_pnl, pos_size = get_current_position()
-    send_telegram(f"🔍 Position gefunden: {hold_side} | Größe: {pos_size}")
+    send_telegram(f"🔍 Position: {hold_side} | Größe: {pos_size}")
     if hold_side == "long":
         result_close = close_order("long", pos_size)
         send_telegram(f"🔄 Close Antwort: {str(result_close)}")
