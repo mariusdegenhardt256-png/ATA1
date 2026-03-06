@@ -223,27 +223,34 @@ def open_order(side):
     set_leverage_bitget()
     btc_size = get_btc_size()
     path = "/api/v2/mix/order/place-order"
+    side_map = {
+        "buy": "open_long",
+        "sell": "open_short"
+    }
     body = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
         "size": btc_size,
-        "side": side,
+        "side": side_map.get(side, side),
         "orderType": "market"
     }
     return bitget_request("POST", path, body=body)
 
 def close_order(hold_side, size):
     path = "/api/v2/mix/order/place-order"
-    close_side = "sell" if hold_side == "long" else "buy"
+    side_map = {
+        "long": "close_long",
+        "short": "close_short"
+    }
     body = {
         "symbol": "SBTCSUSDT",
         "productType": "SUSDT-FUTURES",
         "marginMode": "crossed",
         "marginCoin": "SUSDT",
         "size": str(size),
-        "side": close_side,
+        "side": side_map.get(hold_side, hold_side),
         "orderType": "market"
     }
     return bitget_request("POST", path, body=body)
