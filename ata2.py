@@ -18,7 +18,6 @@ BITGET_SECRET_KEY = os.environ.get("BITGET_SECRET_KEY")
 BITGET_PASSPHRASE = os.environ.get("BITGET_PASSPHRASE")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
-# Bot State
 bot_active = True
 trade_history = []
 daily_pnl = 0.0
@@ -79,7 +78,6 @@ def get_candles(granularity, limit=100):
         }
         result = bitget_request("GET", "/api/v2/mix/market/candles", params=params)
         if result.get("code") == "00000":
-            candles = result.get("data", [])
             return [{
                 "time": c[0],
                 "open": float(c[1]),
@@ -87,7 +85,7 @@ def get_candles(granularity, limit=100):
                 "low": float(c[3]),
                 "close": float(c[4]),
                 "volume": float(c[5])
-            } for c in candles]
+            } for c in result.get("data", [])]
         return []
     except:
         return []
@@ -122,14 +120,10 @@ def get_current_position():
 
 def get_account_balance():
     try:
-        params = {
-            "productType": "SUSDT-FUTURES",
-            "marginCoin": "SUSDT"
-        }
+        params = {"productType": "SUSDT-FUTURES", "marginCoin": "SUSDT"}
         result = bitget_request("GET", "/api/v2/mix/account/account", params=params)
         if result.get("code") == "00000":
-            data = result.get("data", {})
-            return float(data.get("usdtEquity", total_capital))
+            return float(result.get("data", {}).get("usdtEquity", total_capital))
         return total_capital
     except:
         return total_capital
@@ -183,72 +177,69 @@ def close_order(hold_side, size):
     except:
         return None
 
-def ask_claude(candles_5m, candles_15m, candles_1h, candles_4h, candles_1d, position, balance):
+def ask_claude(candles_1h, candles_4h, candles_1d, position, balance):
     try:
-        def summarize(candles, n=30):
-            c = candles[-n:]
-            lines = []
-            for x in c:
-                lines.append(f"O:{x['open']:.0f} H:{x['high']:.0f} L:{x['low']:.0f} C:{x['close']:.0f} V:{x['volume']:.1f}")
-            return "\n".join(lines)
+        def summarize(candles, n=50):
+            return "\n".join([
+                f"O:{c['open']:.0f} H:{c['high']:.0f} L:{c['low']:.0f} C:{c['close']:.0f} V:{c['volume']:.1f}"
+                for c in candles[-n:]
+            ])
 
         pos_text = "Keine offene Position"
         if position[0]:
-            pos_text = f"{position[0].upper()} | Einstieg: ${position[1]} | PnL: {position[2]} SUSDT"
+            pnl = float(position[2]) if position[2] else 0
+            pos_text = f"{position[0].upper()} | Einstieg: ${position[1]} | PnL: {round(pnl, 2)} SUSDT"
 
-        recent_trades = ""
-        if trade_history:
-            recent_trades = "\n".join([f"- {t}" for t in trade_history[-5:]])
+        recent_trades = "\n".join([f"- {t}" for t in trade_history[-5:]]) if trade_history else "Keine"
 
-        prompt = f"""Du bist ATA3, eine hochentwickelte autonome Bitcoin Trading KI.
+        prompt = f"""Du bist ATA3, eine professionelle autonome Bitcoin Trading KI.
 
 KONTOSTAND: {balance:.2f} SUSDT
 AKTUELLE POSITION: {pos_text}
-LETZTE TRADES: {recent_trades if recent_trades else 'Keine'}
+LETZTE TRADES:
+{recent_trades}
 
 MARKTDATEN SBTCUSDT:
 
-5M Kerzen (letzte 30):
-{summarize(candles_5m)}
-
-15M Kerzen (letzte 30):
-{summarize(candles_15m)}
-
-1H Kerzen (letzte 30):
+1H Kerzen (letzte 50):
 {summarize(candles_1h)}
 
-4H Kerzen (letzte 30):
+4H Kerzen (letzte 50):
 {summarize(candles_4h)}
 
-1D Kerzen (letzte 30):
+1D Kerzen (letzte 50):
 {summarize(candles_1d)}
 
-DEINE AUFGABE:
-1. Analysiere alle Timeframes auf Trends, Momentum, Support/Resistance, Volumen
-2. Entscheide ob ein gutes Trading Setup vorhanden ist
-3. Falls ja: definiere Einsatz und Hebel basierend auf Risiko
-4. Ziel: Profit maximieren, Liquidation IMMER vermeiden
-5. Halte Positionen nicht zu lange
+DEINE STRATEGIE:
+Du handelst nach folgenden Prinzipien:
+1. Identifiziere klare Trendrichtung auf 4H und 1D
+2. Steige nur ein wenn 1H den Trend bestätigt
+3. Warte auf starke Setups mit klaren Support/Resistance Levels
+4. Nutze Volumenanalyse zur Bestätigung
+5. Riskiere nie mehr als 10% des Kapitals pro Trade
+6. Hebel maximal 10x außer bei sehr hoher Konfidenz (dann max 15x)
+7. Bei offener Position: nur schließen wenn klares Gegensignal auf 4H oder starker Trendbruch
+8. HOLD bedeutet wirklich halten - nicht bei jedem kleinen Rücksetzer schließen
+9. Lerne aus vergangenen Trades
 
-WICHTIGE REGELN:
-- Nur traden wenn Konfidenz >= 70%
-- Hebel maximal 20x bei hoher Konfidenz, sonst weniger
-- Einsatz maximal 10% des Kapitals pro Trade
-- Bei offener Position: entscheide ob halten, schließen oder nichts tun
-- Lerne aus vergangenen Trades
+WICHTIG:
+- Nur BUY oder SELL wenn Konfidenz >= 75%
+- Bei offener Position HOLD bevorzugen außer bei klarem Trendbruch
+- Keine Übertrading - lieber warten auf gutes Setup
 
 Antworte NUR in diesem JSON Format ohne Markdown:
 {{
   "action": "BUY" oder "SELL" oder "CLOSE" oder "HOLD",
   "confidence": 0-100,
-  "leverage": 1-20,
+  "leverage": 1-15,
   "margin_usdt": Betrag in USDT,
   "reason": "Begründung auf Deutsch in 2-3 Sätzen",
-  "trend_short": "bullish/bearish/neutral",
-  "trend_medium": "bullish/bearish/neutral",
-  "trend_long": "bullish/bearish/neutral",
+  "trend_1h": "bullish/bearish/neutral",
+  "trend_4h": "bullish/bearish/neutral",
+  "trend_1d": "bullish/bearish/neutral",
   "risk_level": "low/medium/high",
-  "expected_duration": "Minuten/Stunden"
+  "stop_loss_price": Preis als Zahl,
+  "take_profit_price": Preis als Zahl
 }}"""
 
         response = requests.post(
@@ -281,9 +272,6 @@ def run_analysis():
     analysis_count += 1
     last_analysis_time = datetime.now().strftime("%H:%M:%S")
 
-    # Kerzen von mehreren Timeframes holen
-    candles_5m = get_candles("5m", 100)
-    candles_15m = get_candles("15m", 100)
     candles_1h = get_candles("1H", 100)
     candles_4h = get_candles("4H", 100)
     candles_1d = get_candles("1D", 50)
@@ -295,44 +283,36 @@ def run_analysis():
     balance = get_account_balance()
     position = (hold_side, avg_price, unrealized_pnl)
 
-    analysis = ask_claude(candles_5m, candles_15m, candles_1h, candles_4h, candles_1d, position, balance)
-
+    analysis = ask_claude(candles_1h, candles_4h, candles_1d, position, balance)
     if not analysis:
         return
 
     action = analysis.get("action", "HOLD")
     confidence = analysis.get("confidence", 0)
-    leverage = analysis.get("leverage", 5)
-    margin = analysis.get("margin_usdt", 50)
+    leverage = min(analysis.get("leverage", 5), 15)
+    margin = min(analysis.get("margin_usdt", 100), balance * 0.10)
     reason = analysis.get("reason", "")
-    trend_short = analysis.get("trend_short", "")
-    trend_medium = analysis.get("trend_medium", "")
-    trend_long = analysis.get("trend_long", "")
+    trend_1h = analysis.get("trend_1h", "")
+    trend_4h = analysis.get("trend_4h", "")
+    trend_1d = analysis.get("trend_1d", "")
     risk_level = analysis.get("risk_level", "medium")
-    duration = analysis.get("expected_duration", "unbekannt")
+    sl = analysis.get("stop_loss_price", 0)
+    tp = analysis.get("take_profit_price", 0)
     now = datetime.now().strftime("%H:%M")
 
-    # Sicherheits Check
-    max_margin = balance * 0.10
-    margin = min(margin, max_margin)
-    leverage = min(leverage, 20)
-
-    if action == "BUY" and confidence >= 70:
+    if action == "BUY" and confidence >= 75:
         if hold_side == "short":
             pnl = float(unrealized_pnl) if unrealized_pnl else 0
             close_order("short", pos_size)
             daily_pnl += pnl
             trade_history.append(f"SHORT geschlossen | PnL: {round(pnl, 2)}$ | {now}")
-            send_telegram(
-                f"🔄 *Short geschlossen!*\n"
-                f"💵 PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$"
-            )
+            send_telegram(f"🔄 *Short geschlossen!*\n💵 PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$")
             time.sleep(1)
 
         if hold_side != "long":
             result = open_order("buy", margin, leverage)
             if result.get("code") == "00000":
-                trade_history.append(f"LONG eröffnet | Margin: {margin}$ | Hebel: {leverage}x | {now}")
+                trade_history.append(f"LONG eröffnet | Margin: {round(margin, 2)}$ | Hebel: {leverage}x | {now}")
                 send_telegram(
                     f"🟢 *ATA3 – LONG eröffnet!*\n\n"
                     f"🤖 Konfidenz: *{confidence}%*\n"
@@ -340,28 +320,26 @@ def run_analysis():
                     f"⚡ Hebel: {leverage}x\n"
                     f"📊 Positionswert: ~{round(margin * leverage, 0)} USDT\n"
                     f"⚠️ Risiko: {risk_level}\n"
-                    f"⏱ Erwartete Dauer: {duration}\n\n"
-                    f"📈 Trends: {trend_short} | {trend_medium} | {trend_long}\n\n"
+                    f"🎯 Take Profit: ${tp}\n"
+                    f"🛑 Stop Loss: ${sl}\n\n"
+                    f"📈 Trends: 1H {trend_1h} | 4H {trend_4h} | 1D {trend_1d}\n\n"
                     f"📝 *Begründung:*\n{reason}\n\n"
                     f"⏰ {now} Uhr"
                 )
 
-    elif action == "SELL" and confidence >= 70:
+    elif action == "SELL" and confidence >= 75:
         if hold_side == "long":
             pnl = float(unrealized_pnl) if unrealized_pnl else 0
             close_order("long", pos_size)
             daily_pnl += pnl
             trade_history.append(f"LONG geschlossen | PnL: {round(pnl, 2)}$ | {now}")
-            send_telegram(
-                f"🔄 *Long geschlossen!*\n"
-                f"💵 PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$"
-            )
+            send_telegram(f"🔄 *Long geschlossen!*\n💵 PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$")
             time.sleep(1)
 
         if hold_side != "short":
             result = open_order("sell", margin, leverage)
             if result.get("code") == "00000":
-                trade_history.append(f"SHORT eröffnet | Margin: {margin}$ | Hebel: {leverage}x | {now}")
+                trade_history.append(f"SHORT eröffnet | Margin: {round(margin, 2)}$ | Hebel: {leverage}x | {now}")
                 send_telegram(
                     f"🔴 *ATA3 – SHORT eröffnet!*\n\n"
                     f"🤖 Konfidenz: *{confidence}%*\n"
@@ -369,8 +347,9 @@ def run_analysis():
                     f"⚡ Hebel: {leverage}x\n"
                     f"📊 Positionswert: ~{round(margin * leverage, 0)} USDT\n"
                     f"⚠️ Risiko: {risk_level}\n"
-                    f"⏱ Erwartete Dauer: {duration}\n\n"
-                    f"📉 Trends: {trend_short} | {trend_medium} | {trend_long}\n\n"
+                    f"🎯 Take Profit: ${tp}\n"
+                    f"🛑 Stop Loss: ${sl}\n\n"
+                    f"📉 Trends: 1H {trend_1h} | 4H {trend_4h} | 1D {trend_1d}\n\n"
                     f"📝 *Begründung:*\n{reason}\n\n"
                     f"⏰ {now} Uhr"
                 )
@@ -382,7 +361,7 @@ def run_analysis():
         trade_history.append(f"{hold_side.upper()} geschlossen | PnL: {round(pnl, 2)}$ | {now}")
         send_telegram(
             f"🔄 *Position geschlossen!*\n\n"
-            f"💵 PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$\n"
+            f"💵 PnL: {'+' if pnl >= 0 else ''}{round(pnl, 2)}$\n\n"
             f"📝 *Grund:*\n{reason}\n\n"
             f"⏰ {now} Uhr"
         )
@@ -393,7 +372,7 @@ def analysis_loop():
             run_analysis()
         except:
             pass
-        time.sleep(300)  # Alle 5 Minuten
+        time.sleep(900)  # Alle 15 Minuten
 
 def send_control_panel():
     hold_side, avg_price, unrealized_pnl, size = get_current_position()
@@ -457,7 +436,7 @@ def telegram_update():
                 json={
                     "model": "claude-sonnet-4-20250514",
                     "max_tokens": 500,
-                    "system": "Du bist ATA3, eine autonome Bitcoin Trading KI. Antworte kurz und präzise auf Deutsch. Du hast Zugriff auf Bitget Simulator und tradest BTC autonom.",
+                    "system": "Du bist ATA3, eine autonome Bitcoin Trading KI. Du analysierst 1H, 4H und 1D Charts und tradest nach klaren Trendstrategien. Antworte kurz und präzise auf Deutsch.",
                     "messages": [{"role": "user", "content": user_message}]
                 },
                 timeout=30
@@ -497,7 +476,7 @@ def telegram_update():
         if trade_history:
             msg = "📈 *Trade Historie:*\n\n" + "\n".join([f"• {t}" for t in trade_history[-10:]])
         else:
-            msg = "📈 *Trade Historie:*\n\nNoch keine Trades!"
+            msg = "📈 *Trade Historie:*\nNoch keine Trades!"
         send_telegram(msg)
 
     return "OK", 200
@@ -511,7 +490,6 @@ def analyze():
 def home():
     return "ATA3 KI Trading Bot laeuft! ✅"
 
-# Analyse Loop starten
 analysis_thread = threading.Thread(target=analysis_loop, daemon=True)
 analysis_thread.start()
 
