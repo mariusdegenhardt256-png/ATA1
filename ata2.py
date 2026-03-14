@@ -390,7 +390,8 @@ def test_sell():
 
 @app.route('/')
 def home():
-    return "ATA2 laeuft! ✅"
+    return "ATA3 KI Trading Bot laeuft! ✅"
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
